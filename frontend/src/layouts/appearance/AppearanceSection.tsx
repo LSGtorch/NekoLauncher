@@ -87,8 +87,6 @@ import {
   parseWidgetColumns,
 } from "../../lib/home";
 import Section, { SettingRow } from "../settings/Section";
-import { UI_SCALE_MAX, UI_SCALE_MIN } from "../../lib/ui-scale";
-import { setUiScale, useUiScale } from "../../lib/ui-scale-store";
 
 /** 图源切换按钮组定义（顺序即展示顺序） */
 const MODE_OPTIONS: Array<{ value: BackgroundMode; label: string }> = [
@@ -126,18 +124,6 @@ const AppearanceSection: React.FC = () => {
     wallpaperEngineUnsupported: weUnsupported,
     refresh,
   } = useBackground();
-  // 界面缩放：由 lib/ui-scale-store 这个独立小 store 持有（它要在窗口揭幕前
-  // 就落定，不适合塞进背景上下文的 hydration 链里）
-  const { mode: uiScaleMode, effective: uiScaleEffective } = useUiScale();
-  // 滑块值：自动档下跟随实际生效比例（只读展示），手动档由用户拖动
-  const [uiScalePercent, setUiScalePercent] = useState(() =>
-    Math.round(uiScaleEffective * 100),
-  );
-
-  useEffect(() => {
-    setUiScalePercent(Math.round(uiScaleEffective * 100));
-  }, [uiScaleEffective]);
-
   const { locale, setLocale, t } = useI18n();
   const { simpleMode, setSimpleMode } = useSimpleMode();
   // NekoLauncher-S 简洁模式（外观/界面结构开关，状态由全局 Provider 持有）
@@ -518,17 +504,10 @@ const AppearanceSection: React.FC = () => {
         t("列数"),
         t("布局"),
         t("简洁模式"),
-        // 界面缩放：高 DPI/小屏用户多半按"缩放 / 比例 / 字体大小"来搜
-        t("缩放"),
-        t("比例"),
-        t("界面大小"),
-        t("DPI"),
         "theme",
         "wallpaper",
         "widget",
         "simple",
-        "scale",
-        "zoom",
       ]}
       title={t("外观")}
     >
@@ -826,53 +805,6 @@ const AppearanceSection: React.FC = () => {
           />
           <span className="text-xs text-gray-400 w-12 text-right">
             {panelBlurStrengthValue}%
-          </span>
-        </div>
-      </SettingRow>
-
-      {/* 界面缩放。存在的理由：wails 在 Windows 上只调了 SetProcessDPIAware
-          （系统级 DPI 感知），main.go 给窗口的 Width/MinWidth 因此按**物理像素**
-          生效，而 UI 是按 CSS 像素设计的——默认 760px 的窗口在 200% 缩放的屏幕上
-          只等于 380 CSS 像素，内容被挤得"特别大"。这里反过来整体缩放界面
-          （CSS zoom 会改变布局视口，调小就能放下更多内容），实时生效。 */}
-      <SettingRow
-        hint={t("按窗口宽度自动适配：高 DPI 或小屏上自动调小，避免内容挤不下")}
-        label={t("自动缩放")}
-      >
-        <Switch
-          aria-label={t("自动缩放")}
-          color="primary"
-          isSelected={uiScaleMode === "auto"}
-          size="sm"
-          onValueChange={(v) =>
-            // 关掉自动时接着当前生效值走手动，避免比例突然跳变
-            void setUiScale(v ? "auto" : uiScaleEffective)
-          }
-        />
-      </SettingRow>
-
-      <SettingRow
-        hint={t("100% 为原始比例；调小可在同样的窗口里放下更多内容，即时生效")}
-        label={t("界面缩放")}
-      >
-        <div className="flex items-center gap-3 w-48">
-          <Slider
-            aria-label={t("界面缩放")}
-            isDisabled={uiScaleMode === "auto"}
-            maxValue={Math.round(UI_SCALE_MAX * 100)}
-            minValue={Math.round(UI_SCALE_MIN * 100)}
-            size="sm"
-            step={5}
-            value={uiScalePercent}
-            onChange={(v) =>
-              setUiScalePercent(Math.round(Array.isArray(v) ? v[0] : v))
-            }
-            onChangeEnd={(v) =>
-              void setUiScale((Array.isArray(v) ? v[0] : v) / 100)
-            }
-          />
-          <span className="text-xs text-gray-400 w-12 text-right">
-            {uiScalePercent}%
           </span>
         </div>
       </SettingRow>

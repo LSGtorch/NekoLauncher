@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"embed"
+	"math"
 	"time"
 
 	"nekolauncher/internal/bindings"
@@ -21,10 +22,45 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+// UI 的设计尺寸（CSS 像素）。窗口视口不该窄于这个宽度，否则内容会被挤变形。
+const (
+	uiMinWidth  = 720
+	uiMinHeight = 480
+)
+
+// scaleByDPI 把 CSS 像素的设计尺寸换算成 wails 需要的物理像素。
+// dpiScale 为 1（非 Windows 或 96 DPI）时原样返回。
+func scaleByDPI(value int, dpiScale float64) int {
+	if dpiScale <= 1 {
+		return value
+	}
+
+	return int(math.Round(float64(value) * dpiScale))
+}
+
 func main() {
 	api := bindings.New()
 	// 恢复上次保存的窗口尺寸（未保存过时用默认值 760×480）
 	windowWidth, windowHeight := config.LoadLauncherWindowSize()
+	// wails 在 Windows 上只声明了"系统级 DPI 感知"（SetProcessDPIAware），options.App
+	// 里的尺寸因此按**物理像素**生效；而 UI 是按 CSS 像素设计的（uiMinWidth 就是那条
+	// 设计线）。不换算的话，200% 缩放的屏幕上 720px 的最小窗口只等于 360 CSS 像素，
+	// 内容被挤得"特别大"。
+	//
+	// 只把**最小尺寸**按 DPI 放大，再把尺寸往上夹到这条线——夹取是幂等的。
+	// 不能对 LoadLauncherWindowSize 的结果直接乘：它存的是
+	// wailsruntime.WindowGetSize 给的物理像素（见 config.SaveGlobalWindowSize），
+	// 乘一次就会 1520 → 3040 逐次翻倍。初次安装时默认值 760×480 也会被这条线
+	// 抬到设计宽度，效果与"把默认值乘 DPI"一致。
+	dpiScale := systemDPIScale()
+	minWidth := scaleByDPI(uiMinWidth, dpiScale)
+	minHeight := scaleByDPI(uiMinHeight, dpiScale)
+	if windowWidth < minWidth {
+		windowWidth = minWidth
+	}
+	if windowHeight < minHeight {
+		windowHeight = minHeight
+	}
 	backdrop := windows.None
 	if config.AcrylicBackdropEnabled() {
 		backdrop = windows.Acrylic // 该功能(亚克力背景)仅Windows有效。
@@ -46,8 +82,8 @@ func main() {
 		Frameless: true,
 		Width:     windowWidth,
 		Height:    windowHeight,
-		MinWidth:  720,
-		MinHeight: 480,
+		MinWidth:  minWidth,
+		MinHeight: minHeight,
 		AssetServer: &assetserver.Options{
 			Assets:  assets,
 			Handler: bindings.NewAssetFallbackHandler(),
