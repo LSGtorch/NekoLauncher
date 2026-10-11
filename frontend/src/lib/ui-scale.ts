@@ -41,19 +41,26 @@ export function clampUiScale(value: number): number {
 /**
  * 量出"100% 缩放时"的视口宽度。
  *
- * 不能直接读 window.innerWidth：CSS zoom 会改变布局视口，边缩放边量会形成
- * 反馈环（缩放→视口变→重算缩放→……）。这里先把 zoom 摘掉量一次再还原——
- * 读 clientWidth 会强制一次同步布局，所以量到的是准确值；还原发生在同一次
- * 任务内，浏览器还没到下一次绘制，因此不会闪。
+ * 不能直接读 clientWidth：applyUiScale 会同时放大根元素的宽高（见那里的说明），
+ * 边缩放边量会量到放大后的值，进而形成反馈环（缩放→量到更宽→重算缩放→……）。
+ * 这里先把 zoom 与宽高一起摘掉量一次再还原——读 clientWidth 会强制一次同步布局，
+ * 所以量到的是准确的"未缩放视口宽"；还原发生在同一次任务内，浏览器还没到下一次
+ * 绘制，因此不会闪。
  */
 export function measureBaseViewportWidth(): number {
   const root = document.documentElement;
-  const previous = root.style.zoom;
+  const previousZoom = root.style.zoom;
+  const previousWidth = root.style.width;
+  const previousHeight = root.style.height;
 
   root.style.zoom = "";
+  root.style.width = "";
+  root.style.height = "";
   const width = root.clientWidth;
 
-  root.style.zoom = previous;
+  root.style.zoom = previousZoom;
+  root.style.width = previousWidth;
+  root.style.height = previousHeight;
 
   return width;
 }
@@ -70,12 +77,32 @@ export function computeAutoScale(baseViewportWidth: number): number {
 }
 
 /**
- * 把缩放写到 <html> 上。zoom 会触发真正的重排（不像 transform 只是视觉缩放），
- * 所以面板宽度、换行、滚动都跟着一起变。1 时清掉属性，避免留一个无意义的
- * zoom:1 影响后续计算样式的判断。
+ * 把缩放写到 <html> 上。
+ *
+ * 关键：**只写 zoom 是不够的**。CSS zoom 只把元素"缩小画出来"，并不会放大布局
+ * 视口——根元素宽度仍按视口计算，缩小后只占窗口的 `scale` 倍，右边下边留一大片
+ * 空白（实测就是这样：窗口没变、界面变小、周围空着）。
+ *
+ * 所以要同时把根元素的宽高反向放大 `1/scale`：先有一个 `1/scale` 倍大的布局盒，
+ * 再被 zoom 缩回去，正好铺满窗口；内容也因此真的拿到了 `1/scale` 倍的布局宽度，
+ * 这才是"同样的窗口里放下更多内容"。
+ *
+ * scale 为 1 时全部清掉，不留无意义的 zoom/width 覆盖。
  */
 export function applyUiScale(scale: number): void {
-  document.documentElement.style.zoom = scale === 1 ? "" : String(scale);
+  const root = document.documentElement;
+
+  if (scale === 1) {
+    root.style.zoom = "";
+    root.style.width = "";
+    root.style.height = "";
+
+    return;
+  }
+
+  root.style.zoom = String(scale);
+  root.style.width = `${100 / scale}%`;
+  root.style.height = `${100 / scale}%`;
 }
 
 /** 配置值解析：空/损坏一律回落自动档 */
