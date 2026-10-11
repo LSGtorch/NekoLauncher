@@ -101,6 +101,15 @@ const MODE_OPTIONS: Array<{ value: BackgroundMode; label: string }> = [
  * unsupported=当前平台不支持（WE 只有 Windows 版） */
 type WeStatus = "checking" | "ok" | "missing" | "unsupported";
 
+/**
+ * 界面缩放的配置键与取值范围。值存 "auto" 或百分数（如 "85"）。
+ * 与 Go 侧 uiscale.go 的 uiScaleKey / uiScaleMinPercent / uiScaleMaxPercent 对应，
+ * 生效靠 wails 的 windows.ZoomFactor，改动**下次启动生效**（见该文件说明）。
+ */
+const UI_SCALE_KEY = "launcherUiScale";
+const UI_SCALE_MIN_PERCENT = 50;
+const UI_SCALE_MAX_PERCENT = 150;
+
 const AppearanceSection: React.FC = () => {
   const {
     mode,
@@ -124,6 +133,55 @@ const AppearanceSection: React.FC = () => {
     wallpaperEngineUnsupported: weUnsupported,
     refresh,
   } = useBackground();
+
+  // 界面缩放：自动档（默认）或手动百分比。读一次配置即可——它不参与背景上下文的
+  // hydration 链，生效也由 Go 侧在下次启动时完成。
+  const [uiScaleAuto, setUiScaleAuto] = useState(true);
+  const [uiScalePercent, setUiScalePercent] = useState(100);
+
+  useEffect(() => {
+    GetValue(UI_SCALE_KEY)
+      .then((raw) => {
+        const value = (raw ?? "").trim();
+
+        if (!value || value === "auto") {
+          setUiScaleAuto(true);
+
+          return;
+        }
+        const parsed = Number(value);
+
+        if (!Number.isFinite(parsed) || parsed <= 0) {
+          setUiScaleAuto(true);
+
+          return;
+        }
+        setUiScaleAuto(false);
+        setUiScalePercent(
+          Math.min(
+            UI_SCALE_MAX_PERCENT,
+            Math.max(UI_SCALE_MIN_PERCENT, Math.round(parsed)),
+          ),
+        );
+      })
+      .catch(() => {
+        /* 读配置失败按默认的自动档显示 */
+      });
+  }, []);
+
+  // 关掉自动档时接着当前值写回一份手动值，避免"关掉自动"这个动作本身改变缩放
+  const saveUiScaleAuto = async (auto: boolean) => {
+    setUiScaleAuto(auto);
+    await SetValue(UI_SCALE_KEY, auto ? "auto" : String(uiScalePercent));
+  };
+
+  const saveUiScalePercent = async (value: number | number[]) => {
+    const percent = Math.round(Array.isArray(value) ? value[0] : value);
+
+    setUiScalePercent(percent);
+    await SetValue(UI_SCALE_KEY, String(percent));
+  };
+
   const { locale, setLocale, t } = useI18n();
   const { simpleMode, setSimpleMode } = useSimpleMode();
   // NekoLauncher-S 简洁模式（外观/界面结构开关，状态由全局 Provider 持有）
@@ -504,10 +562,17 @@ const AppearanceSection: React.FC = () => {
         t("列数"),
         t("布局"),
         t("简洁模式"),
+        // 界面缩放：高 DPI/小屏用户多半按"缩放 / 比例 / 字体大小"来搜
+        t("缩放"),
+        t("比例"),
+        t("界面大小"),
+        t("DPI"),
         "theme",
         "wallpaper",
         "widget",
         "simple",
+        "scale",
+        "zoom",
       ]}
       title={t("外观")}
     >
@@ -805,6 +870,50 @@ const AppearanceSection: React.FC = () => {
           />
           <span className="text-xs text-gray-400 w-12 text-right">
             {panelBlurStrengthValue}%
+          </span>
+        </div>
+      </SettingRow>
+
+      {/* 界面缩放。存在的理由见 Go 侧 uiscale.go：wails 在 Windows 上只声明了
+          系统级 DPI 感知，窗口尺寸按物理像素生效，而 UI 按 CSS 像素设计——
+          界面因此可能被挤得过大。手动档可整体缩放界面。
+          生效方式：windows.ZoomFactor，wails 只在创建 webview 时读它，
+          所以是**下次启动生效**（wails 没有运行时改缩放因子的接口）。 */}
+      <SettingRow
+        hint={t("按窗口宽度自动适配；改动需重启启动器生效")}
+        label={t("自动缩放")}
+      >
+        <Switch
+          aria-label={t("自动缩放")}
+          color="primary"
+          isSelected={uiScaleAuto}
+          size="sm"
+          onValueChange={(v) => void saveUiScaleAuto(v)}
+        />
+      </SettingRow>
+
+      <SettingRow
+        hint={t(
+          "100% 为原始比例；改动需重启启动器生效。非 100% 时亚克力背景不可用（撑满玻璃框架会露出系统标题栏按钮）",
+        )}
+        label={t("界面缩放")}
+      >
+        <div className="flex items-center gap-3 w-48">
+          <Slider
+            aria-label={t("界面缩放")}
+            isDisabled={uiScaleAuto}
+            maxValue={UI_SCALE_MAX_PERCENT}
+            minValue={UI_SCALE_MIN_PERCENT}
+            size="sm"
+            step={5}
+            value={uiScalePercent}
+            onChange={(v) =>
+              setUiScalePercent(Math.round(Array.isArray(v) ? v[0] : v))
+            }
+            onChangeEnd={(v) => void saveUiScalePercent(v)}
+          />
+          <span className="text-xs text-gray-400 w-12 text-right">
+            {uiScalePercent}%
           </span>
         </div>
       </SettingRow>

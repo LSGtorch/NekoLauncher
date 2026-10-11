@@ -61,6 +61,24 @@ func main() {
 	if windowHeight < minHeight {
 		windowHeight = minHeight
 	}
+
+	// 界面缩放：交给 WebView2 的 ZoomFactor（真正的页面缩放）。wails 只在创建
+	// webview 时读它，所以改动下次启动生效——UI 里也是这么标注的。
+	uiZoom := resolveUiZoom(windowWidth, dpiScale)
+
+	// 界面被缩放时不再把玻璃框架铺满窗口。
+	//
+	// 原因：DwmExtendFrameIntoClientArea 传 margins -1 会让 DWM 画出**原生标题栏
+	// 按钮**（wails 的 internal/frontend/desktop/windows/win32/window.go 里注明
+	// "Also shows the caption buttons if transparent ant translucent"），而本应用
+	// 的亚克力实现正是用的 -1。100% 时自绘标题栏（position: fixed）刚好盖住它们；
+	// 一旦缩放界面，自绘那套会跟着变小、错位，原生按钮就露出来了——表现为
+	// "两套关闭/最大化/最小化按钮，一大一小"。
+	//
+	// 传 0 同样不显示原生按钮（同上注释里的 "0: ... does not show the caption
+	// buttons"）。代价是该倍率下没有亚克力模糊，窗口仍是透明的——用亚克力换掉
+	// 那两套按钮，划算。
+	bindings.SetBackdropFrameEnabled(uiZoom == 1)
 	backdrop := windows.None
 	if config.AcrylicBackdropEnabled() {
 		backdrop = windows.Acrylic // 该功能(亚克力背景)仅Windows有效。
@@ -148,6 +166,10 @@ func main() {
 			// 一下"的来源。圆角等外观由 bindings/acrylic_windows.go 的
 			// fixupAcrylicBackdrop 自行补回（见该文件注释）。
 			DisableFramelessWindowDecorations: true,
+			// 界面缩放倍数。wails 只在创建 webview 时读（见 windows.Options 的
+			// ZoomFactor），所以设置页把它标注为"下次启动生效"。1 = 不缩放，
+			// 此时 wails 内部会跳过 PutZoomFactor。
+			ZoomFactor: uiZoom,
 		},
 	})
 	if err != nil {
