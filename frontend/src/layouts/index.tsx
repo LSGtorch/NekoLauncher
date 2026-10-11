@@ -43,6 +43,7 @@ import { onNavigate } from "../lib/navigation";
 import { prefetchIdlePages } from "../lib/lazy";
 import { startAudioBridge } from "../lib/audioBridge";
 import { startRepaintOnRestore } from "../lib/repaint";
+import { initUiScale } from "../lib/ui-scale-store";
 import { notify } from "../components/overlay/dialog";
 import { notifyCrashIfNeeded } from "../lib/crashNotice";
 import { GetLaunchSnapshot } from "../../wailsjs/go/bindings/LauncherAPI";
@@ -290,12 +291,28 @@ const WindowReveal: React.FC = () => {
   // S 模式改变侧边栏构成与首屏，同样要等它落定再揭幕
   const { hydrated: simpleModeHydrated } = useSimpleMode();
   const revealed = useRef(false);
+  // 界面缩放要在揭幕前落定：zoom 会整体改变布局，晚一步应用就会让用户看到
+  // "100% 的一帧 → 跳变"，正是本组件要消灭的那种闪
+  const [uiScaleReady, setUiScaleReady] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+
+    void initUiScale().finally(() => {
+      if (alive) setUiScaleReady(true);
+    });
+
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (
       !backgroundHydrated ||
       !sidebarHydrated ||
       !simpleModeHydrated ||
+      !uiScaleReady ||
       revealed.current
     )
       return;
@@ -305,7 +322,7 @@ const WindowReveal: React.FC = () => {
     }, 50);
 
     return () => window.clearTimeout(timer);
-  }, [backgroundHydrated, sidebarHydrated, simpleModeHydrated]);
+  }, [backgroundHydrated, sidebarHydrated, simpleModeHydrated, uiScaleReady]);
 
   return null;
 };
