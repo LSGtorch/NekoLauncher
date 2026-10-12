@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"embed"
+	"fmt"
 	"math"
 	"time"
 
@@ -65,6 +66,15 @@ func main() {
 	// 界面缩放：交给 WebView2 的 ZoomFactor（真正的页面缩放）。wails 只在创建
 	// webview 时读它，所以改动下次启动生效——UI 里也是这么标注的。
 	uiZoom := resolveUiZoom(windowWidth, dpiScale)
+
+	// 把解析过程打进日志：这一版实机反馈"手动档拉完重启没变化"，而失败可能发生在
+	// 三处——配置没写进去 / 解析没读到 / wails 把 ZoomFactor 传给了 WebView2 但没
+	// 生效（它是在 Navigate 之前调的，而 WebView2 的缩放按 origin 持久化）。有这行
+	// 日志就能一眼定位是哪一处，不用再靠猜。
+	logs.Write("INFO", fmt.Sprintf(
+		"界面缩放：配置值=%q dpiScale=%.2f 窗口=%dx%d → ZoomFactor=%.2f",
+		config.GetValue(uiScaleKey), dpiScale, windowWidth, windowHeight, uiZoom,
+	))
 
 	// 界面被缩放时不再把玻璃框架铺满窗口。
 	//

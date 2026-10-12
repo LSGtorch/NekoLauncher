@@ -175,10 +175,13 @@ const AppearanceSection: React.FC = () => {
     await SetValue(UI_SCALE_KEY, auto ? "auto" : String(uiScalePercent));
   };
 
+  // 拖动滑块即视为转手动档：滑块不再因"自动"而禁用（那样用户拖了没反应，
+  // 会以为是功能坏了），拖它就等于明确表达"我要手动指定"。
   const saveUiScalePercent = async (value: number | number[]) => {
     const percent = Math.round(Array.isArray(value) ? value[0] : value);
 
     setUiScalePercent(percent);
+    setUiScaleAuto(false);
     await SetValue(UI_SCALE_KEY, String(percent));
   };
 
@@ -901,7 +904,6 @@ const AppearanceSection: React.FC = () => {
         <div className="flex items-center gap-3 w-48">
           <Slider
             aria-label={t("界面缩放")}
-            isDisabled={uiScaleAuto}
             maxValue={UI_SCALE_MAX_PERCENT}
             minValue={UI_SCALE_MIN_PERCENT}
             size="sm"
